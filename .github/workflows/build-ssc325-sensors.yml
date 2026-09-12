@@ -63,6 +63,17 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # 失败时把 build.log 尾部作为注解抛出。注解可通过公开 API 匿名读取
+      # （GET /repos/{owner}/{repo}/check-runs/{id}/annotations），而 run 日志和产物
+      # 都需要登录才能下载（实测 401），这样远程排错不必每次手工复制日志。
+      - name: Expose build log tail as annotation
+        if: failure()
+        run: |
+          [ -f build/out/build.log ] || exit 0
+          # 去 ANSI 颜色码 -> 转义 % -> 逐行拼接成 %0A（GitHub 注解的转义规则）
+          msg="$(tail -n 25 build/out/build.log | sed 's/\x1b\[[0-9;]*m//g' | awk '{gsub(/%/,"%25"); printf "%s%%0A", $0}')"
+          if [ -n "$msg" ]; then echo "::error title=build.log tail::${msg}"; fi
+
       - name: Upload .ko
         if: always()
         uses: actions/upload-artifact@v4

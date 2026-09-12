@@ -113,9 +113,12 @@ fetch() { # fetch <url> <outfile>
 # 不是普通文件。用 `find -type f` 会永远匹配不到，必须同时接受符号链接。
 # 取匹配用 -print -quit，避免 `| head -n1` 在 set -o pipefail 下因 SIGPIPE 直接退出。
 TOOLCHAIN_DIR="$WORK/toolchain"
+# 注意 `|| true`：全新 runner 上 $TOOLCHAIN_DIR 还不存在，find 会返回 1；
+# 而 `VAR="$(func)"` 这种赋值语句在 set -e 下同样会因命令替换失败而**静默退出**
+# 整个脚本（第一版就踩了这个坑：日志只有一行、耗时 <1s）。此函数必须恒返回 0。
 find_cross_gcc() {
     find "$TOOLCHAIN_DIR" -path '*/bin/*' -name "${CROSS_COMPILE_NAME}gcc" \
-         \( -type f -o -type l \) -print -quit 2>/dev/null
+         \( -type f -o -type l \) -print -quit 2>/dev/null || true
 }
 
 CROSS_GCC="$(find_cross_gcc)"
@@ -318,12 +321,16 @@ fi
 
 log "vermagic 校验（应与设备内核一致，形如 '4.9.84 ... ARMv7'）:"
 for k in ${BUILT[@]+"${BUILT[@]}"}; do
+    vm=""
     if command -v modinfo >/dev/null 2>&1; then
-        printf '        %-32s %s\n' "$k" "$(modinfo -F vermagic "$OUT/$k" 2>/dev/null || echo '?')"
-    else
-        printf '        %-32s %s\n' "$k" \
-            "$(strings "$OUT/$k" | grep -m1 '^vermagic=' || echo '?')"
+        vm="$(modinfo -F vermagic "$OUT/$k" 2>/dev/null || true)"
     fi
+    if [ -z "$vm" ]; then
+        # 不用 `grep -m1`：它命中即退出会让 strings 收到 SIGPIPE，
+        # 在 pipefail 下管道整体返回非 0，反而把已经找到的值丢掉。
+        vm="$(strings "$OUT/$k" 2>/dev/null | sed -n '/^vermagic=/p' | sed -n '1p' || true)"
+    fi
+    printf '        %-32s %s\n' "$k" "${vm:-?}"
 done
 
 [ "${#FAILED[@]}" -eq 0 ] || exit 1
