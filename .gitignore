@@ -1,0 +1,15 @@
+# 构建中间产物（工具链 ~100MB、内核源码 ~1GB），绝不能提交
+build/work/
+build/out/
+
+# 内核模块/对象
+*.ko
+*.o
+*.mod.c
+*.mod
+.tmp_versions/
+Module.symvers
+modules.order
+
+# 探测脚本
+_probe_sdk.py

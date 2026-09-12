@@ -1,0 +1,62 @@
+name: Build SSC325 sensor modules
+
+# 在 GitHub 的 Ubuntu runner 上交叉编译 drv/src 下的 sensor 驱动。
+# 手动触发（Actions -> Run workflow）或 push 到 drv/ 时自动运行，
+# 完成后在本次 run 页面的 Artifacts 里下载 ssc325-sensor-ko。
+
+on:
+  workflow_dispatch:
+    inputs:
+      sensors:
+        description: '只编译指定 sensor 后缀，空格分隔（留空 = 全部）。例: sc2231_MIPI imx291_MIPI'
+        required: false
+        default: ''
+  push:
+    paths:
+      - 'drv/**'
+      - 'build/build_ssc325_modules.sh'
+      - '.github/workflows/build-ssc325-sensors.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc flex bison perl curl
+
+      - name: Build sensor kernel modules
+        env:
+          JOBS: 4
+          SENSORS: ${{ inputs.sensors }}
+        run: |
+          chmod +x build/build_ssc325_modules.sh
+          ./build/build_ssc325_modules.sh
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### SSC325 sensor modules" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f build/out/manifest.txt ]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat build/out/manifest.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          ls -l build/out || true
+
+      - name: Upload .ko
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssc325-sensor-ko
+          path: |
+            build/out/*.ko
+            build/out/manifest.txt
+          if-no-files-found: warn
