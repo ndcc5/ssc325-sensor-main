@@ -109,18 +109,35 @@ fetch() { # fetch <url> <outfile>
 }
 
 # ------------------------------ 1. 工具链 ------------------------------------
+# 关键：归档里的 ${CROSS_COMPILE_NAME}gcc 是符号链接（-> toolchain-wrapper），
+# 不是普通文件。用 `find -type f` 会永远匹配不到，必须同时接受符号链接。
+# 取匹配用 -print -quit，避免 `| head -n1` 在 set -o pipefail 下因 SIGPIPE 直接退出。
 TOOLCHAIN_DIR="$WORK/toolchain"
-if ! find "$TOOLCHAIN_DIR" -type f -name "${CROSS_COMPILE_NAME}gcc" 2>/dev/null | grep -q .; then
+find_cross_gcc() {
+    find "$TOOLCHAIN_DIR" -path '*/bin/*' -name "${CROSS_COMPILE_NAME}gcc" \
+         \( -type f -o -type l \) -print -quit 2>/dev/null
+}
+
+CROSS_GCC="$(find_cross_gcc)"
+if [ -z "$CROSS_GCC" ]; then
     fetch "$TOOLCHAIN_URL" "$WORK/toolchain.tgz"
     log "解压工具链 ..."
     mkdir -p "$TOOLCHAIN_DIR"
     tar -xzf "$WORK/toolchain.tgz" -C "$TOOLCHAIN_DIR"
+    CROSS_GCC="$(find_cross_gcc)"
 fi
-CROSS_GCC="$(find "$TOOLCHAIN_DIR" -type f -name "${CROSS_COMPILE_NAME}gcc" | head -n1)"
-[ -n "$CROSS_GCC" ] || die "未在 $TOOLCHAIN_DIR 中找到 ${CROSS_COMPILE_NAME}gcc"
+[ -n "$CROSS_GCC" ] || die "未在 $TOOLCHAIN_DIR 中找到 ${CROSS_COMPILE_NAME}gcc（已同时匹配普通文件与符号链接）"
+
 export PATH="$(dirname "$CROSS_GCC"):$PATH"
 log "交叉编译器: ${CROSS_GCC#"$WORK"/}"
-"${CROSS_COMPILE_NAME}gcc" --version | head -n1
+
+# 实际调用一次，确认 Buildroot 的 toolchain-wrapper 能跑起来（它需要同目录下的
+# <prefix>gcc.br_real，这里是硬链接）。失败时把原始输出打出来，不要只留一句 die。
+if ! "${CROSS_COMPILE_NAME}gcc" --version >"$WORK/gcc_version.txt" 2>&1; then
+    sed 's/^/        /' "$WORK/gcc_version.txt" >&2
+    die "交叉编译器无法执行：$CROSS_GCC"
+fi
+sed -n '1p' "$WORK/gcc_version.txt"
 
 # ------------------------------ 2. 内核源码 ----------------------------------
 KSRC="$WORK/linux-$KERNEL_BRANCH"

@@ -1,0 +1,17 @@
+# 统一行尾为 LF。
+#
+# 本仓库在 Windows 上开发（core.autocrlf=true），若不锁定行尾，签出时 Git 会把
+# shell 脚本转换成 CRLF；而 CI 在 Linux 上用 bash 执行该脚本，CRLF 会导致
+# `$'\r': command not found` 之类的语法报错，且报错位置具有误导性。
+* text=auto eol=lf
+
+# 二进制文件不做任何行尾转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.gz   binary
+*.tgz  binary
+*.zip  binary
+*.ko   binary
